@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  # 1) LINT: code quality checks (checkstyle + spotbugs)
+  # ============= 1. LINT =============
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -31,10 +31,10 @@ jobs:
           ./mvnw checkstyle:check
           ./mvnw spotbugs:check
 
-  # 2) TESTS: unit tests
-  tests:
+  # ============= 2. UNIT TESTS =============
+  unit-tests:
     runs-on: ubuntu-latest
-    needs: lint          # pas draaien als lint geslaagd is
+    needs: lint
     steps:
       - uses: actions/checkout@v4
 
@@ -54,10 +54,10 @@ jobs:
       - name: Run unit tests
         run: ./mvnw clean test
 
-  # 3) DOCKER: jar bouwen, Docker image builden + health check
-  docker:
+  # ============= 3. BUILD JAR =============
+  build-jar:
     runs-on: ubuntu-latest
-    needs: tests         # pas draaien als tests geslaagd zijn
+    needs: unit-tests
     steps:
       - uses: actions/checkout@v4
 
@@ -74,14 +74,48 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
-      - name: Build JAR
+      - name: Build JAR (skip tests)
         run: ./mvnw clean package -DskipTests
 
-      - name: Build & test Docker container
+  # ============= 4. DOCKER BUILD =============
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: build-jar
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker compose build app
+
+  # ============= 5. DOCKER HEALTHCHECK =============
+  docker-healthcheck:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start container & check health endpoint
         run: |
-          docker compose build app
           docker compose up -d
+          # even wachten tot de app up is
           sleep 30
           curl -f http://localhost:8080/api/health || exit 1
           docker compose down
+
+  # ============= 6. DEPLOY (voorbeeld) =============
+  deploy:
+    runs-on: ubuntu-latest
+    needs: docker-healthcheck
+    if: github.ref == 'refs/heads/main'   # alleen op main
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy (placeholder)
+        run: |
+          echo "Hier zou je echte deploy-stappen komen"
+          # bv.:
+          # docker login ...
+          # docker push ...
+          # kubectl apply ...
+
 
